@@ -1,21 +1,68 @@
+# ---------- Archive support ----------
+.PHONY: help_archive # Generate list of Archive targets with descriptions.
+help_archive:
+	@echo Use one of the following Archive targets:
+ifeq ($(SYSTEM),win)
+	@$(GREP) "^.PHONY: .* #" $(CURDIR)/makefiles/Makefile.archive.mk | $(SED) "s/\.PHONY: \(.*\) # \(.*\)/\1\t\2/"
+	@echo off & echo(
+else
+	@$(GREP) "^.PHONY: .* #" $(CURDIR)/makefiles/Makefile.archive.mk | $(SED) "s/\.PHONY: \(.*\) # \(.*\)/\1\t\2/" | expand -t20
+	@echo
+endif
 
-archive: $(INSTALL_DIR)$(ARCHIVE_EXT)
+temp_archive:
+	-$(DELREC) temp_archive
+	$(MKDIR_P) temp_archive$S$(INSTALL_DIR)
 
-$(INSTALL_DIR)$(ARCHIVE_EXT): $(LIB_DIR)$S$(LIB_PREFIX)ortools.$L create_dirs cc_archive dotnet_archive java_archive $(PATCHELF)
+# Main target
+.PHONY: archive # Create OR-Tools archive for C++, Java and .Net with Examples.
+archive: archive_cc archive_dotnet archive_java
+	$(COPY) tools$SREADME.cc.java.dotnet temp_archive$S$(INSTALL_DIR)$SREADME
+	$(COPY) tools$SMakefile.cc.java.dotnet temp_archive$S$(INSTALL_DIR)$SMakefile
+
+.PHONY: clean_archive # Clean Archive output from previous build.
+clean_archive:
+	-$(DELREC) temp_archive
+
+.PHONY: archive_cc # Add C++ OR-Tools to archive.
+archive_cc: cc | temp_archive
+	$(MAKE) install_cc prefix=temp_archive$S$(INSTALL_DIR)
+	$(COPY) $(CVRPTW_PATH) temp_archive$S$(INSTALL_DIR)$Slib
+	$(COPY) $(DIMACS_PATH) temp_archive$S$(INSTALL_DIR)$Slib
+	$(COPY) $(FAP_PATH) temp_archive$S$(INSTALL_DIR)$Slib
+	$(MKDIR_P) temp_archive$S$(INSTALL_DIR)$Sexamples$Scpp
+	$(COPY) examples$Scpp$S*.cc temp_archive$S$(INSTALL_DIR)$Sexamples$Scpp
+	$(COPY) examples$Scpp$S*.h  temp_archive$S$(INSTALL_DIR)$Sexamples$Scpp
+
+.PHONY: archive_dotnet # Add .Net OR-Tools to archive.
+archive_dotnet: dotnet | temp_archive
+	"$(DOTNET_EXECUTABLE)" publish \
+ -f netstandard2.0 \
+ -c Release \
+ -o "..$S..$S..$Stemp_archive$S$(INSTALL_DIR)" \
+ ortools$Sdotnet$S$(ORTOOLS_DLL_NAME)$S$(ORTOOLS_DLL_NAME).csproj
+	"$(DOTNET_EXECUTABLE)" publish \
+ -f netstandard2.0 \
+ -c Release \
+ -o "..$S..$S..$Stemp_archive$S$(INSTALL_DIR)" \
+ ortools$Sdotnet$S$(ORTOOLS_FSHARP_DLL_NAME)$S$(ORTOOLS_FSHARP_DLL_NAME).fsproj
+	$(COPY) $(BIN_DIR)$S$(CLR_ORTOOLS_IMPORT_DLL_NAME).$(SWIG_DOTNET_LIB_SUFFIX) temp_archive$S$(INSTALL_DIR)
+
+.PHONY: archive_java # Add Java OR-Tools to archive.
+archive_java: java | temp_archive
+
+
+#archive: $(INSTALL_DIR)$(ARCHIVE_EXT)
+
+$(INSTALL_DIR)$(ARCHIVE_EXT): cc_archive dotnet_archive java_archive
 ifeq ($(SYSTEM),win)
 	cd temp && ..$Stools$Szip.exe -r ..$S$(INSTALL_DIR).zip $(INSTALL_DIR)
 else
-ifeq ($(PLATFORM),LINUX)
-	tools/fix_libraries_on_linux.sh
-else
-	$(COPY) tools/install_libortools_mac.sh temp/$(INSTALL_DIR)
-	chmod 775 temp/$(INSTALL_DIR)/install_libortools_mac.sh
-	cd temp/$(INSTALL_DIR) && ./install_libortools_mac.sh && rm install_libortools_mac.sh
-endif
 	cd temp && tar -c -v -z --no-same-owner -f ..$S$(INSTALL_DIR).tar.gz $(INSTALL_DIR)
 endif
 	-$(DELREC) temp
 
+.PHONY: create_dirs
 create_dirs:
 	-$(DELREC) temp
 	$(MKDIR) temp
@@ -54,8 +101,8 @@ create_dirs:
 	$(MKDIR) temp$S$(INSTALL_DIR)$Sexamples$Snetstandard
 #credits
 	$(COPY) LICENSE-2.0.txt temp$S$(INSTALL_DIR)
-	$(COPY) tools$SREADME.cc.java.csharp temp$S$(INSTALL_DIR)$SREADME
-	$(COPY) tools$SMakefile.cc temp$S$(INSTALL_DIR)$SMakefile
+	$(COPY) tools$SREADME.cc.java.dotnet temp$S$(INSTALL_DIR)$SREADME
+	$(COPY) tools$SMakefile.cc.java.dotnet temp$S$(INSTALL_DIR)$SMakefile
 
 create_data_dirs:
 	-$(DELREC) temp_data
@@ -75,21 +122,33 @@ create_data_dirs:
 	$(MKDIR) temp_data$S$(INSTALL_DIR)$Sexamples$Sdata$Ssurvo_puzzle
 	$(MKDIR) temp_data$S$(INSTALL_DIR)$Sexamples$Sdata$Squasigroup_completion
 	$(MKDIR) temp_data$S$(INSTALL_DIR)$Sexamples$Sdata$Sdiscrete_tomography
+#credits
 	$(COPY) LICENSE-2.0.txt temp_data$S$(INSTALL_DIR)
 
+.PHONY: data_archive
 data_archive: $(INSTALL_DIR)_data$(ARCHIVE_EXT)
 
 $(INSTALL_DIR)_data$(ARCHIVE_EXT): create_data_dirs
 ifeq ($(SYSTEM),win)
-	tools$Star.exe -c -v --exclude *svn* --exclude *roadef* --exclude *vector_packing* --exclude *nsplib* examples\\data | tools$Star.exe xvm -C temp_data\\$(INSTALL_DIR)
+	tools$Star.exe -c -v \
+--exclude *svn* \
+--exclude *roadef* \
+--exclude *vector_packing* \
+--exclude *nsplib* \
+examples\\data | tools$Star.exe xvm -C temp_data\\$(INSTALL_DIR)
 	cd temp_data && ..$Stools$Szip.exe -r ..$S$(INSTALL_DIR)_data.zip $(INSTALL_DIR)
 else
-	tar -c -v --exclude *svn* --exclude *roadef* --exclude *vector_packing* --exclude *nsplib* examples/data | tar xvm -C temp_data/$(INSTALL_DIR)
+	tar -c -v \
+--exclude *svn* \
+--exclude *roadef* \
+--exclude *vector_packing* \
+--exclude *nsplib* \
+examples/data | tar xvm -C temp_data/$(INSTALL_DIR)
 	cd temp_data && tar -c -v -z --no-same-owner -f ..$S$(INSTALL_DIR)_data.tar.gz $(INSTALL_DIR)
 endif
 	-$(DELREC) temp_data
 
-cc_archive: cc
+cc_archive: cc create_dirs
 	$(COPY) $(LIB_DIR)$S$(LIB_PREFIX)cvrptw_lib.$L temp$S$(INSTALL_DIR)$Slib
 	$(COPY) $(LIB_DIR)$S$(LIB_PREFIX)dimacs.$L temp$S$(INSTALL_DIR)$Slib
 	$(COPY) $(LIB_DIR)$S$(LIB_PREFIX)ortools.$L temp$S$(INSTALL_DIR)$Slib
@@ -118,6 +177,7 @@ cc_archive: cc
 	$(COPY) ortools$Sgen$Sortools$Sutil$S*.pb.h temp$S$(INSTALL_DIR)$Sinclude$Sortools$Sutil
 ifeq ($(SYSTEM),win)
 	$(COPY) tools$Smake.exe temp$S$(INSTALL_DIR)
+	$(COPY) tools$Swhich.exe temp$S$(INSTALL_DIR)
 	cd temp$S$(INSTALL_DIR)$Sinclude && ..$S..$S..$Stools$Star.exe -C ..$S..$S..$Sdependencies$Sinstall$Sinclude -c -v gflags | ..$S..$S..$Stools$Star.exe xvm
 	cd temp$S$(INSTALL_DIR)$Sinclude && ..$S..$S..$Stools$Star.exe -C ..$S..$S..$Sdependencies$Sinstall$Sinclude -c -v glog | ..$S..$S..$Stools$Star.exe xvm
 	cd temp$S$(INSTALL_DIR)$Sinclude && ..$S..$S..$Stools$Star.exe -C ..$S..$S..$Sdependencies$Sinstall$Sinclude -c -v google | ..$S..$S..$Stools$Star.exe xvm
@@ -125,9 +185,13 @@ else
 	cd temp$S$(INSTALL_DIR)$Sinclude && tar -C ..$S..$S..$Sdependencies$Sinstall$Sinclude -c -v gflags | tar xvm
 	cd temp$S$(INSTALL_DIR)$Sinclude && tar -C ..$S..$S..$Sdependencies$Sinstall$Sinclude -c -v glog | tar xvm
 	cd temp$S$(INSTALL_DIR)$Sinclude && tar -C ..$S..$S..$Sdependencies$Sinstall$Sinclude -c -v google | tar xvm
+	cd temp$S$(INSTALL_DIR) && tar -C ..$S..$Sdependencies$Sinstall -c -v lib | tar xvm
+  ifneq ($(wildcard dependencies/install/lib64),)
+	cd temp$S$(INSTALL_DIR) && tar -C ..$S..$Sdependencies$Sinstall -c -v lib64 | tar xvm
+  endif
 endif
 
-dotnet_archive: csharp
+dotnet_archive: csharp create_dirs
 	$(COPY) bin$SGoogle.Protobuf.dll temp$S$(INSTALL_DIR)$Sbin
 	$(COPY) bin$S$(CLR_ORTOOLS_DLL_NAME).dll temp$S$(INSTALL_DIR)$Sbin
 	$(COPY) examples$Scsharp$S*.cs temp$S$(INSTALL_DIR)$Sexamples$Scsharp
@@ -160,7 +224,7 @@ define netstandard_example_archive_copy
 	$(COPY) examples$Scsharp$S$(notdir $(1)) temp$S$(INSTALL_DIR)$Sexamples$Snetstandard$S$(basename $(notdir $(1)))$S &&
 endef
 
-java_archive: java
+java_archive: java create_dirs
 	$(COPY) lib$S*.jar temp$S$(INSTALL_DIR)$Slib
 	$(COPY) lib$S$(LIB_PREFIX)jni*.$(JNI_LIB_EXT) temp$S$(INSTALL_DIR)$Slib
 	$(COPY) examples$Scom$Sgoogle$Sortools$Ssamples$S*.java temp$S$(INSTALL_DIR)$Sexamples$Scom$Sgoogle$Sortools$Ssamples
@@ -186,20 +250,11 @@ fz_archive: cc fz
 ifeq ($(SYSTEM),win)
 	cd $(TEMP_FZ_DIR) && ..$Stools$Szip.exe -r ..$S$(FZ_INSTALL_DIR).zip $(FZ_INSTALL_DIR)
 else
-ifeq ($(PLATFORM),LINUX)
-	$(DEP_BIN_DIR)$Spatchelf --set-rpath '$$ORIGIN/../lib' $(TEMP_FZ_DIR)$S$(FZ_INSTALL_DIR)$Sbin$Sfzn-or-tools
-endif
-ifeq ($(PLATFORM),MACOSX)
-	$(COPY) tools$Sfix_fz_libraries_on_mac.sh $(TEMP_FZ_DIR)$S$(FZ_INSTALL_DIR)
-	chmod u+x $(TEMP_FZ_DIR)/$(FZ_INSTALL_DIR)$Sfix_fz_libraries_on_mac.sh
-	cd $(TEMP_FZ_DIR)$S$(FZ_INSTALL_DIR) && .$Sfix_fz_libraries_on_mac.sh
-	$(RM) $(TEMP_FZ_DIR)$S$(FZ_INSTALL_DIR)$Sfix_fz_libraries_on_mac.sh
-endif
 	cd $(TEMP_FZ_DIR) && tar cvzf ..$S$(FZ_INSTALL_DIR).tar.gz $(FZ_INSTALL_DIR)
 endif
 	-$(DELREC) $(TEMP_FZ_DIR)
 
-
+.PHONY: test_archive
 test_archive: $(INSTALL_DIR)$(ARCHIVE_EXT)
 	-$(DELREC) temp
 	$(MKDIR) temp
@@ -208,7 +263,7 @@ test_archive: $(INSTALL_DIR)$(ARCHIVE_EXT)
 ifeq ($(SYSTEM),win)
 	tools$Sunzip.exe $(INSTALL_DIR).zip -d temp
 else
-	tar -x -v -f $(INSTALL_DIR).tar.gz -C temp
+	tar -xvf $(INSTALL_DIR).tar.gz -C temp
 endif
 	cd temp$S$(INSTALL_DIR) && $(MAKE) test && cd ../.. && $(RENAME) lib2 lib && echo "archive test succeeded" || ( cd ../.. && $(RENAME) lib2 lib && echo "archive test failed" && exit 1)
 
@@ -271,3 +326,13 @@ endif #ifeq "$(PLATFORM)" "MACOSX"
 
 endif #ifeq ($(SYSTEM),win)
 endif #ifeq "$(PYTHON3)" "true"
+
+.PHONY: detect_archive # Show variables used to build archive OR-Tools.
+detect_archive:
+	@echo Relevant info for the archive build:
+	@echo INSTALL_DIR = $(INSTALL_DIR)
+ifeq ($(SYSTEM),win)
+	@echo off & echo(
+else
+	@echo
+endif
